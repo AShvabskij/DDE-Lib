@@ -56,21 +56,20 @@
 ```mermaid
 flowchart LR
     subgraph P_UPPER["Процесс: Верхний уровень"]
-        DES_U["DataExchangeService<br/>(upper)"]
+        DES_U["DataExchangeService<br/>upper"]
         APP_U["UI / Отображение"]
     end
 
     subgraph P_LOWER["Процесс: Нижний уровень"]
-        DEV["Устройства<br/>(CAN, Modbus, ...)"]
+        DEV["Устройства<br/>CAN, Modbus, ..."]
         APP_L["Логика нижнего<br/>уровня"]
-        DES_L["DataExchangeService<br/>(lower)"]
+        DES_L["DataExchangeService<br/>lower"]
     end
 
-    subgraph SHM["Shared Memory (/dev/shm/dde)"]
-        R1["Ring buffer up_to_down<br/>(команды)"]
-        R2["Ring buffer down_to_up<br/>(данные)"]
+    subgraph SHM["Shared Memory /dev/shm/dde"]
+        R1["Ring buffer up_to_down<br/>команды"]
+        R2["Ring buffer down_to_up<br/>данные"]
     end
-
 
     DEV -- "значения" --> APP_L
     APP_L -- "write_data()" --> DES_L
@@ -83,7 +82,6 @@ flowchart LR
     R1 -- "recv()" --> DES_L
     DES_L -- "recv_cmd()" --> APP_L
     APP_L -- "команды" --> DEV
-
 ```
 
 Диаграмма классов обобщенная
