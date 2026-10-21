@@ -23,11 +23,12 @@ struct PodSerializer {
 
     static bool unpack(const void* buf, size_t len, T* arr_out, size_t arr_cap, size_t& n) {
         if (len % sizeof(T) != 0) return false;
-        if (buf == nullptr || arr_out == nullptr) return false;
 
         n = len/sizeof(T);
-        if (n == 0) return false;
+        if (n == 0) return true; // pscket is empty
         if (n > arr_cap) return false;
+
+        if (buf == nullptr || arr_out == nullptr) return false;
 
         std::memcpy(arr_out, buf, len);
         return true;
