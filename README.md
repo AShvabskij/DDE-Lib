@@ -1,5 +1,5 @@
-# Проектная работа DDE Service (Device Data Exchange Service)
-
+# Проектная работа DDE Service (Device Data Exchange Service) 
+## Курс Otus C++ Developer. Professional 
 
 ## 1. Цель
 
