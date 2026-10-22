@@ -21,10 +21,12 @@ enum class MsgKind : uint16_t {
 // Заголовок сообщения. Передаётся перед payload'ом.
 #pragma pack(push, 1)
 struct MsgHeader {
-    uint16_t kind;          // тип сообщения
+    MsgKind  kind;          // тип сообщения
     uint16_t count;         // число элементов в payload
     uint32_t payload_len;   // длина payload в байтах
 };
+static_assert(sizeof(MsgHeader) == 8, "MsgHeader must be 8 bytes for ABI stability");
+
 #pragma pack(pop)
 
 // Константы по умолчанию
