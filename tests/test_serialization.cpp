@@ -63,7 +63,7 @@ TEST(PodSerializerTest, UnpackOverflowFails) {
 
 // Пустой пакет
 TEST(PodSerializerTest, PackEmpty) {
-    auto packed = dde::PodSerializer<TestData>::pack(nullptr, 0);
+    auto packed = dde::PodSerializer<Parameter>::pack(nullptr, 0);
     EXPECT_TRUE(packed.empty());
 }
 

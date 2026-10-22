@@ -13,6 +13,11 @@ enum class Status {
     Error               // ошибка или некорректные данные
 };
 
+enum class MsgKind : uint16_t {
+    DataPush = 1,
+    CommandBatch
+};
+
 // Заголовок сообщения. Передаётся перед payload'ом.
 #pragma pack(push, 1)
 struct MsgHeader {
