@@ -49,7 +49,6 @@ Status DataExchangeService<TData, TCommand, DataSer, CmdSer>::read_data(
 
     if (hdr.kind != MsgKind::DataPush) return Status::Error;
 
-    // Распаковываем массив
     if (!DataSer::unpack(buf, out_len, out_arr, max_count, out_count)) {
         return Status::Error;
     }
