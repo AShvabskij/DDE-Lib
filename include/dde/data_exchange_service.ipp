@@ -85,7 +85,6 @@ Status DataExchangeService<TData, TCommand, DataSer, CmdSer>::recv_cmd(TCommand*
 
     if (hdr.kind != MsgKind::CommandBatch) return Status::Error;
 
-    size_t n = 0;
     if (!CmdSer::unpack(buf, out_len, out_arr, max_count, out_count)) return Status::Error;
 
     return Status::Ok;
@@ -101,6 +100,7 @@ void DataExchangeService<TData, TCommand, DataSer, CmdSer>::async_flush() {
         if (m_outbox.empty()) return;
         
         // Перекладываем всё из очереди в локальный вектор
+        // todo: Надо проверять m_outbox на максимально допустимый размер и если больше, то посылать только часть (чтобы не получить переполнения)
         batch.assign(m_outbox.begin(), m_outbox.end());
         m_outbox.clear();
     }
@@ -108,9 +108,11 @@ void DataExchangeService<TData, TCommand, DataSer, CmdSer>::async_flush() {
     Status s = try_send_batch(batch);
     
     if (s != Status::Ok) {
-        // Если отправить не удалось — возвращаем команды обратно в очередь
-        std::lock_guard<std::mutex> lock(m_mtx);
-        m_outbox.insert(m_outbox.begin(), batch.begin(), batch.end());
+        // // Если отправить не удалось — возвращаем команды обратно в очередь
+        // std::lock_guard<std::mutex> lock(m_mtx);
+        // m_outbox.insert(m_outbox.begin(), batch.begin(), batch.end());
+
+        std::cout << "DDE: Error sending the command queue, Overflow or corruption"  << "\n";
     }
 }
 

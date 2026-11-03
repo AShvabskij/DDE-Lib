@@ -53,7 +53,6 @@ public:
                 std::chrono::milliseconds timeout) override;
 
     bool        is_connected() const override;
-    const char* kind() const override { return "shm"; }
 
 private:
     Status open_segment(const std::string& base_name, RingType type);

@@ -8,10 +8,19 @@ add_compile_options(-Wall -Wextra -Werror)
 
 add_library(dde
     src/serialization.cpp
-    # src/shm_transport.cpp
+    src/shm_transport.cpp
 )
 
 target_include_directories(dde PUBLIC include)
+find_package(Threads REQUIRED)
+target_link_libraries(dde PUBLIC Threads::Threads)
+
+add_executable(dde_lower demo/dde_lower.cpp)
+add_executable(dde_upper demo/dde_upper.cpp)
+
+# привязываем библиотеку dde
+target_link_libraries(dde_lower PRIVATE dde)
+target_link_libraries(dde_upper PRIVATE dde)
 
 # Подключаем GoogleTest
 include(FetchContent)

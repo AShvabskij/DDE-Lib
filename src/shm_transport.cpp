@@ -51,12 +51,12 @@ Status ShmTransport::open_segment(const std::string& base_name, RingType type) {
         fd = shm_open(full_name.c_str(), flags, 0666);
         if (fd >= 0) {
             if (ftruncate(fd, sizeof(ShmLayout)) != 0) {
-                close(fd);
+                ::close(fd);
                 return Status::Error;
             }
             // Инициализируем новый сегмент
             void* p = mmap(nullptr, sizeof(ShmLayout), PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-            if (p == MAP_FAILED) { close(fd); return Status::Error; }
+            if (p == MAP_FAILED) { ::close(fd); return Status::Error; }
             
             ShmLayout* layout = static_cast<ShmLayout*>(p);
             std::memset(layout, 0, sizeof(ShmLayout));
@@ -86,7 +86,7 @@ Status ShmTransport::open_segment(const std::string& base_name, RingType type) {
     if (fd < 0) return Status::Error;
 
     void* p = mmap(nullptr, sizeof(ShmLayout), PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-    if (p == MAP_FAILED) { close(fd); return Status::Error; }
+    if (p == MAP_FAILED) { ::close(fd); return Status::Error; }
 
     if (is_tx) {
         m_tx_fd = fd;
@@ -120,7 +120,7 @@ void ShmTransport::close_segment(int& fd, ShmLayout*& layout) {
         layout = nullptr;
     }
     if (fd >= 0) {
-        close(fd);
+        ::close(fd);
         fd = -1;
     }
 }
@@ -130,8 +130,8 @@ void ShmTransport::close() {
     close_segment(m_rx_fd, m_rx_ring);
     
     if (m_is_owner) {
-        shm_unlink((m_base_name + "_up_to_down").c_str());
-        shm_unlink((m_base_name + "_down_to_up").c_str());
+        ::shm_unlink((m_base_name + "_up_to_down").c_str());
+        ::shm_unlink((m_base_name + "_down_to_up").c_str());
     }
 }
 
