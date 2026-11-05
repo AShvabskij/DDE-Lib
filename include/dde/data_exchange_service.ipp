@@ -107,12 +107,14 @@ void DataExchangeService<TData, TCommand, DataSer, CmdSer>::async_flush() {
 
     Status s = try_send_batch(batch);
     
-    if (s != Status::Ok) {
-        // // Если отправить не удалось — возвращаем команды обратно в очередь
-        // std::lock_guard<std::mutex> lock(m_mtx);
-        // m_outbox.insert(m_outbox.begin(), batch.begin(), batch.end());
-
+    if (s == Status::Error) {
         std::cout << "DDE: Error sending the command queue, Overflow or corruption"  << "\n";
+    } else if (s == Status::Busy) {
+        // Если отправить не удалось — возвращаем команды обратно в очередь
+        std::lock_guard<std::mutex> lock(m_mtx);
+        m_outbox.insert(m_outbox.begin(), batch.begin(), batch.end());
+
+        std::cout << "DDE: Error sending the command queue, buffer is busy"  << "\n";
     }
 }
 
