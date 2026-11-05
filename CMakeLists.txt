@@ -9,6 +9,7 @@ add_compile_options(-Wall -Wextra -Werror)
 add_library(dde
     src/serialization.cpp
     src/shm_transport.cpp
+    src/in_process_transport.cpp
 )
 
 target_include_directories(dde PUBLIC include)
