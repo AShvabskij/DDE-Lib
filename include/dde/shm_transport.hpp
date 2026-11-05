@@ -4,13 +4,11 @@
 
 namespace dde {
 
-constexpr size_t ShmSlotPayload = Max_Msg_Payload;
-
 #pragma pack(push, 1)
 struct ShmSlot {
     MsgHeader hdr;
     uint32_t  payload_len;
-    uint8_t   payload[ShmSlotPayload];
+    uint8_t   payload[Max_Msg_Payload];
 };
 
 // Структура одного независимого сегмента shared memory

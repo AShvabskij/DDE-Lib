@@ -2,6 +2,7 @@ add_executable(dde_tests
     test_serialization.cpp
     test_mock_transport.cpp
     test_data_exchange.cpp
+    test_in_process_transport.cpp
 )
 
 target_link_libraries(dde_tests

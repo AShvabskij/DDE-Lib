@@ -18,6 +18,11 @@ enum class MsgKind : uint16_t {
     CommandBatch
 };
 
+enum class TransportDir {
+    Up = 0,
+    Down
+};
+
 // Заголовок сообщения. Передаётся перед payload'ом.
 #pragma pack(push, 1)
 struct MsgHeader {
