@@ -10,17 +10,13 @@ enum class Status {
     Busy,               // буфер получателя заполнен, попробуйте позже
     Timeout,            // операция не завершилась за отведённое время
     Disconnected,       // соединение разорвано
-    Error               // ошибка или некорректные данные
+    Error,               // ошибка или некорректные данные
+    Overflow
 };
 
 enum class MsgKind : uint16_t {
     DataPush = 1,
     CommandBatch
-};
-
-enum class TransportDir {
-    Up = 0,
-    Down
 };
 
 // Заголовок сообщения. Передаётся перед payload'ом.
@@ -37,5 +33,7 @@ static_assert(sizeof(MsgHeader) == 8, "MsgHeader must be 8 bytes for ABI stabili
 // Константы по умолчанию
 constexpr size_t Max_Msg_Payload = 4096;   // максимальный размер payload
 constexpr size_t Ring_Capacity = 64;      // число слотов в ring buffer'е
+constexpr size_t Max_Msg_Count = 1000;   // максимальный размер очереди сообщений
+
 }
 

@@ -32,13 +32,13 @@ using TestService = DataExchangeService<Parameter, Command>;
 TEST(InMemoryTransportTest, ExchangeInOneProcess) {
     auto channel = std::make_shared<InProcessChannel>();
 
-    // Верхний уровень (dir=0)
-    auto upper_transport = std::make_unique<InProcessTransport>(channel, TransportDir::Up);
+    // Верхний уровень
+    auto upper_transport = std::make_unique<InProcessTransport>(channel, InProcessTransport::Level::Upper);
     TestService upper_service(std::move(upper_transport));
     ASSERT_EQ(upper_service.init("test"), Status::Ok);
 
-    // Нижний уровень (dir=1)
-    auto lower_transport = std::make_unique<InProcessTransport>(channel, TransportDir::Down);
+    // Нижний уровень
+    auto lower_transport = std::make_unique<InProcessTransport>(channel, InProcessTransport::Level::Lower);
     TestService lower_service(std::move(lower_transport));
     ASSERT_EQ(lower_service.init("test"), Status::Ok);
 
@@ -78,11 +78,11 @@ TEST(InMemoryTransportTest, ExchangeInOneProcess) {
 TEST(InMemoryTransportTest, MultiThreadedExchange) {
     auto channel = std::make_shared<InProcessChannel>();
 
-    auto upper_transport = std::make_unique<InProcessTransport>(channel, TransportDir::Up);
+    auto upper_transport = std::make_unique<InProcessTransport>(channel, InProcessTransport::Level::Upper);
     TestService upper_service(std::move(upper_transport));
     ASSERT_EQ(upper_service.init("test"), Status::Ok);
 
-    auto lower_transport = std::make_unique<InProcessTransport>(channel, TransportDir::Down);
+    auto lower_transport = std::make_unique<InProcessTransport>(channel, InProcessTransport::Level::Lower);
     TestService lower_service(std::move(lower_transport));
     ASSERT_EQ(lower_service.init("test"), Status::Ok);
 

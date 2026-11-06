@@ -10,7 +10,7 @@
 namespace dde {
 
 // Канал связи, который разделяют два транспорта
-class InProcessChannel {
+struct InProcessChannel {
 public:
     struct Message {
         MsgHeader hdr;
@@ -18,17 +18,25 @@ public:
     };
 
     // Очереди: 0 = UpToDown, 1 = DownToUp
-    std::queue<Message> queues[2];
+    std::queue<Message> up_down_queue;
+    std::queue<Message> down_up_queue;
+
     std::mutex mtx;
-    std::condition_variable cv[2];
+    std::condition_variable up_down_cv;
+    std::condition_variable down_up_cv;
+
     bool closed = false;
 };
 
 class InProcessTransport : public ITransport {
 public:
-    // dir: 0 (UpToDown) или 1 (DownToUp). 
+    enum class Level {
+        Upper = 0, // Верхний уровень, потребитель данных 
+        Lower  // Нижний уровень, отправитель данных
+    };
+
     // channel: общий указатель на канал связи.
-    explicit InProcessTransport(std::shared_ptr<InProcessChannel> channel, TransportDir dir);
+    explicit InProcessTransport(std::shared_ptr<InProcessChannel> channel, Level dir);
 
     Status open(const std::string& ) override { return Status::Ok; } // Заглушка
     void close() override;
@@ -41,8 +49,8 @@ public:
 
 private:
     std::shared_ptr<InProcessChannel> m_channel;
-    int m_tx_idx; // индекс очереди для отправки (0 или 1)
-    int m_rx_idx; // индекс очереди для приема (1 или 0)
+    Level m_level;
+
 };
 
 } // namespace dde

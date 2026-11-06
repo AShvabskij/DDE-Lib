@@ -2,24 +2,24 @@
 
 namespace dde {
 
-InProcessTransport::InProcessTransport(std::shared_ptr<InProcessChannel> channel, TransportDir dir)
+InProcessTransport::InProcessTransport(std::shared_ptr<InProcessChannel> channel, Level dir)
     : m_channel(std::move(channel)) 
 {
-    // Если мы Верхний (dir=0), то пишем в 0, читаем из 1.
-    // Если мы Нижний (dir=1), то пишем в 1, читаем из 0.
-    m_tx_idx = (dir == TransportDir::Up) ? 0 : 1; 
-    m_rx_idx = (dir == TransportDir::Down) ? 0 : 1;
+    m_level = dir;
 }
 
 void InProcessTransport::close() {
     std::lock_guard<std::mutex> lock(m_channel->mtx);
     m_channel->closed = true;
-    m_channel->cv[0].notify_all();
-    m_channel->cv[1].notify_all();
+    m_channel->up_down_cv.notify_all();
+    m_channel->down_up_cv.notify_all();
 }
 
 Status InProcessTransport::send(const MsgHeader& hdr, const void* payload, size_t payload_len) {
     if (m_channel->closed) return Status::Disconnected;
+
+    auto& tx_queue = m_level == Level::Upper ? m_channel->up_down_queue : m_channel->down_up_queue;
+    auto& cv = m_level == Level::Upper ? m_channel->up_down_cv : m_channel->down_up_cv;
 
     InProcessChannel::Message msg;
     msg.hdr = hdr;
@@ -30,11 +30,15 @@ Status InProcessTransport::send(const MsgHeader& hdr, const void* payload, size_
 
     {
         std::lock_guard<std::mutex> lock(m_channel->mtx);
-        // В памяти мы не ограничены размером слота, поэтому всегда Ok
-        m_channel->queues[m_tx_idx].push(std::move(msg));
+        
+        tx_queue.push(std::move(msg));
+        if (tx_queue.size() > Max_Msg_Count) {
+            cv.notify_one();
+            return Status::Overflow;
+        }
     }
     
-    m_channel->cv[m_tx_idx].notify_one();
+    cv.notify_one();
     return Status::Ok;
 }
 
@@ -43,9 +47,12 @@ Status InProcessTransport::recv(MsgHeader& hdr, void* buf, size_t cap, size_t& o
 {
     std::unique_lock<std::mutex> lock(m_channel->mtx);
 
+    auto& rx_queue = (m_level == Level::Upper) ? m_channel->down_up_queue : m_channel->up_down_queue;
+    auto& cv = (m_level == Level::Upper) ? m_channel->down_up_cv : m_channel->up_down_cv;
+
     auto start = std::chrono::steady_clock::now();
 
-    while (m_channel->queues[m_rx_idx].empty()) {
+    while (rx_queue.empty()) {
         if (m_channel->closed) return Status::Disconnected;
 
         auto now = std::chrono::steady_clock::now();
@@ -53,15 +60,14 @@ Status InProcessTransport::recv(MsgHeader& hdr, void* buf, size_t cap, size_t& o
             return Status::Timeout;
         }
 
-        m_channel->cv[m_rx_idx].wait_for(lock, timeout - (now - start));
+        cv.wait_for(lock, timeout - (now - start));
     }
 
-    auto& msg = m_channel->queues[m_rx_idx].front();
+    auto& msg = rx_queue.front();
     
     if (msg.payload.size() > cap) {
-        // Буфер получателя слишком мал. Выкидываем сообщение, чтобы не застрять.
-        m_channel->queues[m_rx_idx].pop();
-        return Status::Error;
+        rx_queue.pop(); // // Выкидываем слишком большое сообщение
+        return Status::Error; // Буфер получателя слишком мал
     }
 
     hdr = msg.hdr;
@@ -70,7 +76,7 @@ Status InProcessTransport::recv(MsgHeader& hdr, void* buf, size_t cap, size_t& o
         std::memcpy(buf, msg.payload.data(), out_len);
     }
 
-    m_channel->queues[m_rx_idx].pop();
+    rx_queue.pop();
     return Status::Ok;
 }
 
