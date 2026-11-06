@@ -35,9 +35,13 @@ Status ShmTransport::open_segment(const std::string& base_name, RingType type) {
     // Определяем суффикс: 
     // Верхний уровень: пишет в up_to_down, читает из down_to_up
     // Нижний уровень: пишет в down_to_up, читает из up_to_down
-    std::string suffix = is_tx 
-        ? (m_level == Level::Upper ? "_up_to_down" : "_down_to_up")
-        : (m_level == Level::Lower ? "_down_to_up" : "_up_to_down");
+
+    std::string suffix = "";
+    if (is_tx) {
+        suffix = (m_level == Level::Upper ? "_up_to_down" : "_down_to_up");        
+    } else {
+        suffix = (m_level == Level::Upper ? "_down_to_up" : "_up_to_down");
+    }
 
     std::string full_name = base_name + suffix;
 

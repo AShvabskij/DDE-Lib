@@ -45,7 +45,10 @@ int main() {
                 std::cout << "[Lower] Sent batch of " << DEMO_PARAMS_PER_MODULE 
                           << " params. Mod=" << mod 
                           << " First val=" << batch[0].value << "\n";
-            } else {
+            } else if (s == Status::Busy) {
+                std::cerr << "[Lower] Failed to send data, the buffer is busy\n";
+            }
+            else {
                 std::cerr << "[Lower] Failed to send data\n";
             }
         }
