@@ -30,13 +30,8 @@ public:
 
 class InProcessTransport : public ITransport {
 public:
-    enum class Level {
-        Upper = 0, // Верхний уровень, потребитель данных 
-        Lower  // Нижний уровень, отправитель данных
-    };
-
     // channel: общий указатель на канал связи.
-    explicit InProcessTransport(std::shared_ptr<InProcessChannel> channel, Level dir);
+    explicit InProcessTransport(std::shared_ptr<InProcessChannel> channel, Level lvl);
 
     Status open(const std::string& ) override { return Status::Ok; } // Заглушка
     void close() override;

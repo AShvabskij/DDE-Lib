@@ -19,6 +19,11 @@ enum class MsgKind : uint16_t {
     CommandBatch
 };
 
+enum class Level {
+    Upper = 0, // Верхний уровень, потребитель данных 
+    Lower  // Нижний уровень, отправитель данных
+};
+
 // Заголовок сообщения. Передаётся перед payload'ом.
 #pragma pack(push, 1)
 struct MsgHeader {

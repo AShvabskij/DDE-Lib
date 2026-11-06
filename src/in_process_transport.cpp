@@ -2,10 +2,10 @@
 
 namespace dde {
 
-InProcessTransport::InProcessTransport(std::shared_ptr<InProcessChannel> channel, Level dir)
+InProcessTransport::InProcessTransport(std::shared_ptr<InProcessChannel> channel, Level level)
     : m_channel(std::move(channel)) 
 {
-    m_level = dir;
+    m_level = level;
 }
 
 void InProcessTransport::close() {
