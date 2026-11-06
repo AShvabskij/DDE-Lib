@@ -24,8 +24,8 @@ static int lock_robust(pthread_mutex_t* m) {
     return rc;
 }
 
-ShmTransport::ShmTransport(ShmDirection dir, bool is_owner) 
-    : m_dir(dir), m_is_owner(is_owner) {}
+ShmTransport::ShmTransport(Level level, bool is_owner) 
+    : m_level(level), m_is_owner(is_owner) {}
 
 ShmTransport::~ShmTransport() { close(); }
 
@@ -33,12 +33,11 @@ Status ShmTransport::open_segment(const std::string& base_name, RingType type) {
     bool is_tx = (type == RingType::Tx);
 
     // Определяем суффикс: 
-    // если нужно отправлять от верхнего к нижнему (RingType::Tx) - down_to_up
-    // если нужно получать от нижнего к верхнему (RingType::Rx) - up_to_down
-    
+    // Верхний уровень: пишет в up_to_down, читает из down_to_up
+    // Нижний уровень: пишет в down_to_up, читает из up_to_down
     std::string suffix = is_tx 
-        ? (m_dir == ShmDirection::UpToDown ? "_up_to_down" : "_down_to_up")
-        : (m_dir == ShmDirection::UpToDown ? "_down_to_up" : "_up_to_down");
+        ? (m_level == Level::Upper ? "_up_to_down" : "_down_to_up")
+        : (m_level == Level::Lower ? "_down_to_up" : "_up_to_down");
 
     std::string full_name = base_name + suffix;
 
@@ -224,7 +223,7 @@ Status ShmTransport::recv(MsgHeader& hdr, void* buf, size_t cap, size_t& out_len
 // ==========================================
 // Заглушка для Windows
 // ==========================================
-ShmTransport::ShmTransport(ShmDirection dir, bool is_owner) : m_dir(dir), m_is_owner(is_owner) {}
+ShmTransport::ShmTransport(Level level, bool is_owner) : m_level(level), m_is_owner(is_owner) {}
 ShmTransport::~ShmTransport() {}
 Status ShmTransport::open_segment(const std::string&, RingType) { return Status::Error; }
 Status ShmTransport::open(const std::string&) { return Status::Error; }

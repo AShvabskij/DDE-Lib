@@ -11,7 +11,7 @@ using namespace dde;
 using namespace std::chrono_literals;
 
 int main() {
-    auto transport = std::make_unique<ShmTransport>(ShmDirection::DownToUp, true);
+    auto transport = std::make_unique<ShmTransport>(Level::Lower, true);
     DataExchangeService<Parameter, Command> service(std::move(transport));
 
     if (service.init("/dde_demo") != Status::Ok) {

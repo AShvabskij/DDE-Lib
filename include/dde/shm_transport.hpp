@@ -28,11 +28,6 @@ struct ShmLayout {
 };
 #pragma pack(pop)
 
-enum class ShmDirection {
-    UpToDown, // Верхний уровень: пишет в UpToDown, читает из DownToUp
-    DownToUp  // Нижний уровень: пишет в DownToUp, читает из UpToDown
-};
-
 enum class RingType {
     Tx, // Transmit (куда пишем)
     Rx  // Receive  (откуда читаем)
@@ -40,7 +35,7 @@ enum class RingType {
 
 class ShmTransport : public ITransport {
 public:
-    explicit ShmTransport(ShmDirection dir, bool is_owner = false);
+    explicit ShmTransport(Level level, bool is_owner = false);
     ~ShmTransport() override;
 
     Status open(const std::string& endpoint) override;
@@ -56,7 +51,7 @@ private:
     Status open_segment(const std::string& base_name, RingType type);
     void close_segment(int& fd, ShmLayout*& layout);
 
-    ShmDirection m_dir;
+    Level m_level;
     bool m_is_owner;
     std::string m_base_name;
 
