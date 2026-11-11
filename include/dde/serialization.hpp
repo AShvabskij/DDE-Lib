@@ -11,6 +11,10 @@ template<typename T>
 struct PodSerializer {
     static_assert(std::is_trivially_copyable_v<T>, "Not trivially copyable type");
 
+    static size_t max_count(size_t max_bytes) {
+        return max_bytes / sizeof(T);
+    }
+        
     static std::vector<std::byte> pack(const T* arr, size_t n) {
         if (n == 0) return {};
         if (arr == nullptr) return {};

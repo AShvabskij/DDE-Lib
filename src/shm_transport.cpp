@@ -145,7 +145,7 @@ bool ShmTransport::is_connected() const {
 
 Status ShmTransport::send(const MsgHeader& hdr, const void* payload, size_t payload_len) {
     if (!m_tx_ring) return Status::Error;
-    if (payload_len > Max_Msg_Payload) return Status::Error;
+    if (payload_len > Max_Msg_Payload) return Status::Overflow;
 
     if (lock_robust(&m_tx_ring->mtx) != 0) return Status::Error;
 

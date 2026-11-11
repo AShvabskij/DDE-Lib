@@ -95,26 +95,28 @@ void DataExchangeService<TData, TCommand, DataSer, CmdSer>::async_flush() {
     if (!m_running.load()) return;
 
     std::vector<TCommand> batch;
+    size_t max_count = CmdSer::max_count(Max_Msg_Payload);
+    size_t count_to_send = std::min(m_outbox.size(), max_count);
+
+    batch.reserve(max_count);
+
     {
         std::lock_guard<std::mutex> lock(m_mtx);
         if (m_outbox.empty()) return;
-        
-        // Перекладываем всё из очереди в локальный вектор
-        // todo: Надо проверять m_outbox на максимально допустимый размер и если больше, то посылать только часть (чтобы не получить переполнения)
-        batch.assign(m_outbox.begin(), m_outbox.end());
-        m_outbox.clear();
+        batch.assign(m_outbox.begin(), m_outbox.begin() + count_to_send);
     }
 
     Status s = try_send_batch(batch);
     
-    if (s == Status::Error) {
-        std::cout << "DDE: Error sending the command queue, Overflow or corruption"  << "\n";
-    } else if (s == Status::Busy) {
-        // Если отправить не удалось — возвращаем команды обратно в очередь
+    if (s == Status::Ok) {
         std::lock_guard<std::mutex> lock(m_mtx);
-        m_outbox.insert(m_outbox.begin(), batch.begin(), batch.end());
-
+        m_outbox.erase(m_outbox.begin(), std::next(m_outbox.begin(), count_to_send));
+    } else if (s == Status::Busy) {
         std::cout << "DDE: Error sending the command queue, buffer is busy"  << "\n";
+    } else if (s == Status::Overflow) {
+        std::cout << "DDE: Overflow error sending the command queue"  << "\n";
+    } else if (s == Status::Error) {
+        std::cout << "DDE: Unknown error sending the command queue"  << "\n";
     }
 }
 
@@ -123,27 +125,36 @@ Status DataExchangeService<TData, TCommand, DataSer, CmdSer>::sync_flush(std::ch
     if (!m_running.load()) return Status::Disconnected;
 
     auto start = std::chrono::steady_clock::now();
+
+    size_t max_count = CmdSer::max_count(Max_Msg_Payload);;
+    size_t count_to_send = std::min(m_outbox.size(), max_count);
     
     while (true) {
         std::vector<TCommand> batch;
+        batch.reserve(max_count);
         {
             std::lock_guard<std::mutex> lock(m_mtx);
             if (m_outbox.empty()) return Status::Ok;
-            
-            batch.assign(m_outbox.begin(), m_outbox.end());
-            m_outbox.clear();
+
+            batch.assign(m_outbox.begin(), m_outbox.begin() + count_to_send);
         }
 
         Status s = try_send_batch(batch);
         
-        if (s == Status::Ok) continue; // отправлено, возможно в очереди есть еще
-
-        // Ошибка при отправке
-        {
-            std::lock_guard<std::mutex> lock(m_mtx);
-            m_outbox.insert(m_outbox.begin(), batch.begin(), batch.end());
+        if (s == Status::Ok) {
+            m_outbox.erase(m_outbox.begin(), std::next(m_outbox.begin(), count_to_send));
+            continue; // отправлено, возможно в очереди есть еще
         }
 
+        // Ошибка при отправке
+        if (s == Status::Busy) {
+            std::cout << "DDE: Error sending the command queue, buffer is busy"  << "\n";
+        } else if (s == Status::Overflow) {
+            std::cout << "DDE: Overflow error sending the command queue"  << "\n";
+        } else if (s == Status::Error) {
+            std::cout << "DDE: Unknown error sending the command queue"  << "\n";
+        }
+      
         auto now = std::chrono::steady_clock::now();
         if (now - start >= timeout) {
             return Status::Timeout;
