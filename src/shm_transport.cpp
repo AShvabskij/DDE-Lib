@@ -66,6 +66,7 @@ Status ShmTransport::open_segment(const std::string& base_name, RingType type) {
             
             pthread_mutexattr_t ma;
             pthread_mutexattr_init(&ma);
+            pthread_condattr_setclock(&cattr, CLOCK_MONOTONIC);
             pthread_mutexattr_setpshared(&ma, PTHREAD_PROCESS_SHARED);
             pthread_mutexattr_setrobust(&ma, PTHREAD_MUTEX_ROBUST);
             pthread_mutex_init(&layout->mtx, &ma);
@@ -73,6 +74,7 @@ Status ShmTransport::open_segment(const std::string& base_name, RingType type) {
 
             pthread_condattr_t ca;
             pthread_condattr_init(&ca);
+            pthread_condattr_setclock(&cattr, CLOCK_MONOTONIC);
             pthread_condattr_setpshared(&ca, PTHREAD_PROCESS_SHARED);
             pthread_cond_init(&layout->cv_not_empty, &ca);
             pthread_cond_init(&layout->cv_not_full, &ca);
@@ -209,10 +211,14 @@ Status ShmTransport::recv(MsgHeader& hdr, void* buf, size_t cap, size_t& out_len
             return Status::Timeout;
         }
 
-        auto left = std::chrono::duration_cast<std::chrono::nanoseconds>(timeout - (now - start));
-        timespec ts;
-        ts.tv_sec = left.count() / 1000000000LL;
-        ts.tv_nsec = left.count() % 1000000000LL;
+        struct timespec ts;
+        clock_gettime(CLOCK_MONOTONIC, &ts);           // текущий момент + сколько ждать
+        ts.tv_sec  += timeout.count() / 1000;          
+        ts.tv_nsec += (timeout.count() % 1000) * 1'000'000;
+        if (ts.tv_nsec >= 1'000'000'000) {             // нормализация
+            ts.tv_sec  += 1;
+            ts.tv_nsec -= 1'000'000'000;
+        }
 
         int rc = pthread_cond_timedwait(&m_rx_ring->cv_not_empty, &m_rx_ring->mtx, &ts);
         
