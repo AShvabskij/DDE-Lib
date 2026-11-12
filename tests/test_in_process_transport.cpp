@@ -60,9 +60,9 @@ TEST(InMemoryTransportTest, ExchangeInOneProcess) {
     EXPECT_EQ(recv_data[1], send_data[1]);
 
     // 2. Тестируем поток команд (Верхний -> Нижний)
-    upper_service.send_cmd({1, 0, 5, 100, 1}); // write
-    upper_service.send_cmd({1, 0, 6, 200, 1}); // write
-    upper_service.async_flush(); // Отправляем пакет
+    ASSERT_EQ(upper_service.send_cmd({1, 0, 5, 100, 1}), Status::Ok); // write
+    ASSERT_EQ(upper_service.send_cmd({1, 0, 6, 200, 1}), Status::Ok); // write
+    ASSERT_EQ(upper_service.async_flush(), Status::Ok); // Отправляем пакет
 
     Command recv_cmd[5];
     size_t cmd_count = 0;

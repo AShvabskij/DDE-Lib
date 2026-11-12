@@ -28,9 +28,8 @@ public:
     Status send_cmd(const TCommand& c);
     Status recv_cmd(TCommand* out_arr, size_t max_count, size_t& out_count, std::chrono::milliseconds timeout);
 
-    // --- Служебные ---
     Status sync_flush(std::chrono::milliseconds timeout);
-    void   async_flush();
+    Status async_flush();
 
 private:
     Status try_send_batch(const std::vector<TCommand>& batch);

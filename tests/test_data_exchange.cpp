@@ -83,8 +83,9 @@ TEST(DataExchangeServiceTest, SendCmdAndFlush) {
     EXPECT_TRUE(mock_ptr->get_sent_copy().empty());
 
     // Сливаем очередь
-    service.async_flush();
-
+    Status s = service.async_flush();
+    ASSERT_EQ(s, Status::Ok);
+    
     // Проверяем, что в транспорте появился 1 пакет (батч)
     auto sent = mock_ptr->get_sent_copy();
     ASSERT_EQ(sent.size(), 1);

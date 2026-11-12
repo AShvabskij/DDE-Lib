@@ -80,8 +80,8 @@ Status DataExchangeService<TData, TCommand, DataSer, CmdSer>::recv_cmd(TCommand*
     uint8_t buf[Max_Msg_Payload];
     size_t out_len = 0;
 
-    Status s = m_transport->recv(hdr, buf, sizeof(buf), out_len, timeout);
-    if (s != Status::Ok) return s;
+    Status res = m_transport->recv(hdr, buf, sizeof(buf), out_len, timeout);
+    if (res != Status::Ok) return res;
 
     if (hdr.kind != MsgKind::CommandBatch) return Status::Error;
 
@@ -91,33 +91,27 @@ Status DataExchangeService<TData, TCommand, DataSer, CmdSer>::recv_cmd(TCommand*
 }
 
 template<typename TData, typename TCommand, typename DataSer, typename CmdSer>
-void DataExchangeService<TData, TCommand, DataSer, CmdSer>::async_flush() {
-    if (!m_running.load()) return;
+Status DataExchangeService<TData, TCommand, DataSer, CmdSer>::async_flush() {
+    if (!m_running.load()) return Status::Error;
 
     std::vector<TCommand> batch;
     size_t max_count = CmdSer::max_count(Max_Msg_Payload);
     size_t count_to_send = std::min(m_outbox.size(), max_count);
 
-    batch.reserve(max_count);
-
     {
         std::lock_guard<std::mutex> lock(m_mtx);
-        if (m_outbox.empty()) return;
+        if (m_outbox.empty()) return Status::Ok;
         batch.assign(m_outbox.begin(), m_outbox.begin() + count_to_send);
     }
 
-    Status s = try_send_batch(batch);
+    Status res = try_send_batch(batch);
     
-    if (s == Status::Ok) {
+    if (res == Status::Ok) {
         std::lock_guard<std::mutex> lock(m_mtx);
         m_outbox.erase(m_outbox.begin(), std::next(m_outbox.begin(), count_to_send));
-    } else if (s == Status::Busy) {
-        std::cout << "DDE: Error sending the command queue, buffer is busy"  << "\n";
-    } else if (s == Status::Overflow) {
-        std::cout << "DDE: Overflow error sending the command queue"  << "\n";
-    } else if (s == Status::Error) {
-        std::cout << "DDE: Unknown error sending the command queue"  << "\n";
-    }
+    } 
+
+    return res;
 }
 
 template<typename TData, typename TCommand, typename DataSer, typename CmdSer>
@@ -139,29 +133,23 @@ Status DataExchangeService<TData, TCommand, DataSer, CmdSer>::sync_flush(std::ch
             batch.assign(m_outbox.begin(), m_outbox.begin() + count_to_send);
         }
 
-        Status s = try_send_batch(batch);
-        
-        if (s == Status::Ok) {
-            m_outbox.erase(m_outbox.begin(), std::next(m_outbox.begin(), count_to_send));
-            continue; // отправлено, возможно в очереди есть еще
-        }
+        Status res = try_send_batch(batch);
 
-        // Ошибка при отправке
-        if (s == Status::Busy) {
-            std::cout << "DDE: Error sending the command queue, buffer is busy"  << "\n";
-        } else if (s == Status::Overflow) {
-            std::cout << "DDE: Overflow error sending the command queue"  << "\n";
-        } else if (s == Status::Error) {
-            std::cout << "DDE: Unknown error sending the command queue"  << "\n";
+        if (res == Status::Ok) {
+                m_outbox.erase(m_outbox.begin(), std::next(m_outbox.begin(), count_to_send)); // убираем отправленные команды из очереди
+                continue; // возможно в очереди есть еще, пробуем сразу
+        } else if (res == Status::Busy) {
+            auto now = std::chrono::steady_clock::now();
+            if (now - start >= timeout) {
+                return Status::Timeout;
+            }
+            
+            // Ждем перед следующей попыткой (backoff)
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            continue;
+        } else {
+            return res; // return error status
         }
-      
-        auto now = std::chrono::steady_clock::now();
-        if (now - start >= timeout) {
-            return Status::Timeout;
-        }
-        
-        // Ждем перед следующей попыткой (backoff)
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
 }
 
