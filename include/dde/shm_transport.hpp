@@ -22,7 +22,7 @@ struct ShmLayout {
     
     uint32_t head;
     uint32_t tail;
-    bool     closed;
+    bool     ready;
     
     ShmSlot slots[Ring_Capacity];
 };
@@ -45,14 +45,14 @@ public:
     Status recv(MsgHeader& hdr, void* buf, size_t cap, size_t& out_len,
                 std::chrono::milliseconds timeout) override;
 
-    bool        is_connected() const override;
+    bool is_connected() const override;
 
 private:
     Status open_segment(const std::string& base_name, RingType type);
     void close_segment(int& fd, ShmLayout*& layout);
 
     Level m_level;
-    bool m_is_owner;
+    bool  m_is_owner;
     std::string m_base_name;
 
     // Указатели на наши "роли" (физические сегменты, в которые мы пишем/читаем)

@@ -4,6 +4,8 @@
 #ifdef __linux__
 #include <sys/mman.h>
 #include <sys/stat.h>
+#include <sys/file.h>
+#include <iostream>
 #include <fcntl.h>
 #include <unistd.h>
 #include <errno.h>
@@ -14,6 +16,9 @@
 namespace dde {
 
 #ifdef __linux__
+
+constexpr uint32_t MAGIC = 0x44444531;
+constexpr uint32_t CURRENT_VERSION = 1;
 
 static int lock_robust(pthread_mutex_t* m) {
     int rc = pthread_mutex_lock(m);
@@ -45,28 +50,37 @@ Status ShmTransport::open_segment(const std::string& base_name, RingType type) {
 
     std::string full_name = base_name + suffix;
 
-    int flags = O_RDWR;
-    int fd = shm_open(full_name.c_str(), flags, 0666);
-    
-    if (fd < 0 && errno == ENOENT) {
-        // Сегмента нет, создаем его
-        flags |= O_CREAT | O_EXCL;
-        fd = shm_open(full_name.c_str(), flags, 0666);
-        if (fd >= 0) {
-            if (ftruncate(fd, sizeof(ShmLayout)) != 0) {
-                ::close(fd);
-                return Status::Error;
-            }
-            // Инициализируем новый сегмент
-            void* p = mmap(nullptr, sizeof(ShmLayout), PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-            if (p == MAP_FAILED) { ::close(fd); return Status::Error; }
+    int fd = shm_open(full_name.c_str(), O_RDWR| O_CREAT, 0666); // открыть или создать
+
+    if (fd < 0) return Status::Error;
+
+    int rc = flock(fd, LOCK_EX);
+    if (rc == -1) {
+        std::cerr << "Open_segment failed: " << strerror(errno) << "\n";
+        ::close(fd);
+        return Status::Error;
+    }
+
+    if (ftruncate(fd, sizeof(ShmLayout)) != 0) {
+        std::cerr << "Open_segment failed: " << strerror(errno) << "\n";
+        ::close(fd);
+        return Status::Error;
+    }
+
+    void* p = mmap(nullptr, sizeof(ShmLayout), PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    if (p == MAP_FAILED) { 
+        std::cerr << "Open_segment failed: " << strerror(errno) << "\n";
+        ::close(fd); 
+        return Status::Error; 
+    }
             
-            ShmLayout* layout = static_cast<ShmLayout*>(p);
+    ShmLayout* layout = static_cast<ShmLayout*>(p);
+
+    if (layout->magic != MAGIC) { // структура не инициализирована
             std::memset(layout, 0, sizeof(ShmLayout));
             
             pthread_mutexattr_t ma;
             pthread_mutexattr_init(&ma);
-            pthread_condattr_setclock(&cattr, CLOCK_MONOTONIC);
             pthread_mutexattr_setpshared(&ma, PTHREAD_PROCESS_SHARED);
             pthread_mutexattr_setrobust(&ma, PTHREAD_MUTEX_ROBUST);
             pthread_mutex_init(&layout->mtx, &ma);
@@ -74,33 +88,35 @@ Status ShmTransport::open_segment(const std::string& base_name, RingType type) {
 
             pthread_condattr_t ca;
             pthread_condattr_init(&ca);
-            pthread_condattr_setclock(&cattr, CLOCK_MONOTONIC);
+            pthread_condattr_setclock(&ca, CLOCK_MONOTONIC);
             pthread_condattr_setpshared(&ca, PTHREAD_PROCESS_SHARED);
             pthread_cond_init(&layout->cv_not_empty, &ca);
             pthread_cond_init(&layout->cv_not_full, &ca);
             pthread_condattr_destroy(&ca);
 
-            layout->magic = 0x44444531;
-            layout->version = 1;
-            layout->closed = false;
-            
-            munmap(layout, sizeof(ShmLayout)); // отцепляем, прицепим ниже
-        }
+            layout->magic = MAGIC;
+            layout->version = CURRENT_VERSION;
+            layout->ready = true;
+    }
+
+    if (layout->version != CURRENT_VERSION ) {
+        std::cerr << "Open_segment failed: shm version mismatch\n";
+        ::close(fd);
+        return Status::Error;
     }
 
     if (fd < 0) return Status::Error;
 
-    void* p = mmap(nullptr, sizeof(ShmLayout), PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-    if (p == MAP_FAILED) { ::close(fd); return Status::Error; }
-
     if (is_tx) {
         m_tx_fd = fd;
-        m_tx_ring = static_cast<ShmLayout*>(p);
+        m_tx_ring = static_cast<ShmLayout*>(layout);
     } else {
         m_rx_fd = fd;
-        m_rx_ring = static_cast<ShmLayout*>(p);
+        m_rx_ring = static_cast<ShmLayout*>(layout);
     }
     
+    flock(fd, LOCK_UN);
+
     return Status::Ok;
 }
 
@@ -142,7 +158,7 @@ void ShmTransport::close() {
 
 bool ShmTransport::is_connected() const {
     return m_tx_ring != nullptr && m_rx_ring != nullptr 
-        && !m_tx_ring->closed && !m_rx_ring->closed;
+        && m_tx_ring->ready && m_rx_ring->ready;
 }
 
 Status ShmTransport::send(const MsgHeader& hdr, const void* payload, size_t payload_len) {
@@ -200,7 +216,7 @@ Status ShmTransport::recv(MsgHeader& hdr, void* buf, size_t cap, size_t& out_len
             return Status::Ok;
         }
 
-        if (m_rx_ring->closed) {
+        if (!m_rx_ring->ready) {
             pthread_mutex_unlock(&m_rx_ring->mtx);
             return Status::Disconnected;
         }
