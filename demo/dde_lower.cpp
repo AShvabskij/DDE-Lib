@@ -25,7 +25,7 @@ int main() {
     float base_value = 0.0f;
     int tick = 0;
 
-    while (true) {
+    while (tick < 100) {
         // 1. Симулируем опрос модулей (собираем данные в пакет)
         for (uint16_t mod = 0; mod < DEMO_MODULES_COUNT; ++mod) {
             Parameter batch[DEMO_PARAMS_PER_MODULE];
@@ -92,6 +92,8 @@ int main() {
         std::this_thread::sleep_for(100ms);
         tick++;
     }
+
+    service.stop();
 
     return 0;
 }

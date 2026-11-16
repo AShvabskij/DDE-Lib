@@ -1,6 +1,7 @@
 #pragma once
 #include "dde/itransport.hpp"
 #include <string>
+#include <shared_mutex>
 
 namespace dde {
 
@@ -22,7 +23,7 @@ struct ShmLayout {
     
     uint32_t head;
     uint32_t tail;
-    bool     ready;
+    bool     closed;
     
     ShmSlot slots[Ring_Capacity];
 };
@@ -50,12 +51,14 @@ public:
 private:
     Status open_segment(const std::string& base_name, RingType type);
     void close_segment(int& fd, ShmLayout*& layout);
+    void notify_close();
 
     Level m_level;
     bool  m_is_owner;
     std::string m_base_name;
 
-    // Указатели на наши "роли" (физические сегменты, в которые мы пишем/читаем)
+    std::shared_mutex m_stop_mtx; // to avoid a race condition while stopping...
+
     int m_tx_fd = -1;
     ShmLayout* m_tx_ring = nullptr; // transmit (куда пишем)
 

@@ -10,9 +10,11 @@ InProcessTransport::InProcessTransport(std::shared_ptr<InProcessChannel> channel
 
 void InProcessTransport::close() {
     std::lock_guard<std::mutex> lock(m_channel->mtx);
-    m_channel->closed = true;
-    m_channel->up_down_cv.notify_all();
-    m_channel->down_up_cv.notify_all();
+
+    if (!m_channel->closed.exchange(true)) {
+        m_channel->up_down_cv.notify_all();
+        m_channel->down_up_cv.notify_all();
+    }
 }
 
 Status InProcessTransport::send(const MsgHeader& hdr, const void* payload, size_t payload_len) {
@@ -45,12 +47,12 @@ Status InProcessTransport::send(const MsgHeader& hdr, const void* payload, size_
 Status InProcessTransport::recv(MsgHeader& hdr, void* buf, size_t cap, size_t& out_len,
                                std::chrono::milliseconds timeout) 
 {
-    std::unique_lock<std::mutex> lock(m_channel->mtx);
-
     auto& rx_queue = (m_level == Level::Upper) ? m_channel->down_up_queue : m_channel->up_down_queue;
     auto& cv = (m_level == Level::Upper) ? m_channel->down_up_cv : m_channel->up_down_cv;
 
     auto start = std::chrono::steady_clock::now();
+
+    std::unique_lock<std::mutex> lock(m_channel->mtx);
 
     while (rx_queue.empty()) {
         if (m_channel->closed) return Status::Disconnected;

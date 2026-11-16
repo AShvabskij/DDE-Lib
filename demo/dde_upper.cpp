@@ -47,6 +47,8 @@ int main() {
 
     int tick = 0;
     while (running.load()) {
+        if (tick >= 50) break;
+
         // 1. Читаем данные (пакеты)
         constexpr size_t max_data_packet = Max_Msg_Payload / sizeof(Parameter) + 1;
         Parameter batch[max_data_packet];
@@ -55,7 +57,7 @@ int main() {
         // Вычитываем всё, что накопилось в буфере
         while (true) {
             Status rs = service.poll_data(batch, max_data_packet, count);
-            if (rs == Status::Timeout) break; // poll_data использует таймаут 0, вернет Timeout если пусто
+            if (rs == Status::Timeout || count == 0) break; // poll_data использует таймаут 0, вернет Timeout если пусто
 
             std::cout << "[Upper] Got batch of " << count << " params. First val: " << batch[0].value << "\n";
             
@@ -85,6 +87,8 @@ int main() {
 
     running.store(false);
     flush_thread.join();
+
+    service.stop();
 
     return 0;
 }

@@ -35,11 +35,13 @@ private:
     Status try_send_batch(const std::vector<TCommand>& batch);
 
     std::unique_ptr<ITransport> m_transport;
+
     std::atomic<bool> m_running{false};
     
     // Очередь команд
-    std::mutex m_mtx;
+    std::mutex m_outbox_mtx;
     std::deque<TCommand> m_outbox;
+    
 };
 
 } // namespace dde

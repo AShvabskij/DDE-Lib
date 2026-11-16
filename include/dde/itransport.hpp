@@ -13,11 +13,10 @@ public:
     // Открыть транспорт. endpoint — имя shm-сегмента или "host:port".
     virtual Status open(const std::string& endpoint) = 0;
 
-    // Закрыть транспорт и освободить ресурсы.
     virtual void close() = 0;
 
-    // Отправить один фрейм: [MsgHeader][payload].
-    // Возвращает Busy, если буфер полон; Timeout — если не удалось за отведённое время.
+    // Отправить один фрейм: [MsgHeader][payload]
+    // Возвращает Busy, если буфер полон; Timeout — если не удалось за отведённое время
     virtual Status send(const MsgHeader& hdr,
                         const void* payload, size_t payload_len) = 0;
 

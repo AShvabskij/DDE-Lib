@@ -10,6 +10,7 @@
 #include <unistd.h>
 #include <errno.h>
 #include <pthread.h>
+#include <mutex>
 #include <chrono>
 #endif
 
@@ -96,7 +97,7 @@ Status ShmTransport::open_segment(const std::string& base_name, RingType type) {
 
             layout->magic = MAGIC;
             layout->version = CURRENT_VERSION;
-            layout->ready = true;
+            layout->closed = false;
     }
 
     if (layout->version != CURRENT_VERSION ) {
@@ -146,24 +147,52 @@ void ShmTransport::close_segment(int& fd, ShmLayout*& layout) {
     }
 }
 
+
+void ShmTransport::notify_close() {
+    if (m_tx_ring) {
+        pthread_mutex_lock(&m_tx_ring->mtx);
+        m_tx_ring->closed = true;
+        pthread_cond_broadcast(&m_tx_ring->cv_not_empty);
+        pthread_cond_broadcast(&m_tx_ring->cv_not_full);
+        pthread_mutex_unlock(&m_tx_ring->mtx);
+    }
+
+    if (m_rx_ring) {
+        pthread_mutex_lock(&m_rx_ring->mtx);
+        m_rx_ring->closed = true;        
+        pthread_cond_broadcast(&m_rx_ring->cv_not_empty);
+        pthread_cond_broadcast(&m_rx_ring->cv_not_full);
+        pthread_mutex_unlock(&m_rx_ring->mtx);
+    }
+}
+
 void ShmTransport::close() {
+    // двухфазная остановка
+
+    notify_close(); // фаза 1: пробудить все потоки, завершить текущие операции
+    
+    std::unique_lock<std::shared_mutex> lock(m_stop_mtx); // ждать завершения всех операций
+    
+    // фаза 2: удалить ресурсы
     close_segment(m_tx_fd, m_tx_ring);
     close_segment(m_rx_fd, m_rx_ring);
     
     if (m_is_owner) {
-        ::shm_unlink((m_base_name + "_up_to_down").c_str());
-        ::shm_unlink((m_base_name + "_down_to_up").c_str());
+        shm_unlink((m_base_name + "_up_to_down").c_str());
+        shm_unlink((m_base_name + "_down_to_up").c_str());
     }
 }
 
 bool ShmTransport::is_connected() const {
     return m_tx_ring != nullptr && m_rx_ring != nullptr 
-        && m_tx_ring->ready && m_rx_ring->ready;
+        && !m_tx_ring->closed && !m_rx_ring->closed;
 }
 
 Status ShmTransport::send(const MsgHeader& hdr, const void* payload, size_t payload_len) {
     if (!m_tx_ring) return Status::Error;
     if (payload_len > Max_Msg_Payload) return Status::Overflow;
+
+    std::shared_lock<std::shared_mutex> lock(m_stop_mtx); 
 
     if (lock_robust(&m_tx_ring->mtx) != 0) return Status::Error;
 
@@ -191,11 +220,23 @@ Status ShmTransport::recv(MsgHeader& hdr, void* buf, size_t cap, size_t& out_len
                           std::chrono::milliseconds timeout) {
     if (!m_rx_ring) return Status::Error;
 
+    std::shared_lock<std::shared_mutex> lock(m_stop_mtx); 
+
     if (lock_robust(&m_rx_ring->mtx) != 0) return Status::Error;
+
+    if (m_rx_ring->closed) {
+        pthread_mutex_unlock(&m_rx_ring->mtx);
+        return Status::Disconnected;
+    }
 
     auto start = std::chrono::steady_clock::now();
 
     while (true) {
+        if (m_rx_ring->closed) {
+            pthread_mutex_unlock(&m_rx_ring->mtx);
+            return Status::Disconnected;
+        }
+
         if (m_rx_ring->head != m_rx_ring->tail) {
             ShmSlot& slot = m_rx_ring->slots[m_rx_ring->tail];
             if (slot.payload_len > cap) {
@@ -214,11 +255,6 @@ Status ShmTransport::recv(MsgHeader& hdr, void* buf, size_t cap, size_t& out_len
             
             pthread_mutex_unlock(&m_rx_ring->mtx);
             return Status::Ok;
-        }
-
-        if (!m_rx_ring->ready) {
-            pthread_mutex_unlock(&m_rx_ring->mtx);
-            return Status::Disconnected;
         }
 
         auto now = std::chrono::steady_clock::now();

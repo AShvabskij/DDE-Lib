@@ -19,14 +19,20 @@ Status DataExchangeService<TData, TCommand, DataSer, CmdSer>::init(const std::st
 
 template<typename TData, typename TCommand, typename DataSer, typename CmdSer>
 void DataExchangeService<TData, TCommand, DataSer, CmdSer>::stop() {
-    m_running.store(false);
+
+    if (!m_running.exchange(false)) {
+        return;
+    };
+
     m_transport->close();
 }
 
 template<typename TData, typename TCommand, typename DataSer, typename CmdSer>
 Status DataExchangeService<TData, TCommand, DataSer, CmdSer>::write_data(const TData* arr, size_t count) {
+
     if (!m_running.load()) return Status::Disconnected;
     if (count == 0 || arr == nullptr) return Status::Error;
+
 
     auto payload = DataSer::pack(arr, count);
     MsgHeader hdr{MsgKind::DataPush, static_cast<uint16_t>(count), static_cast<uint32_t>(payload.size())};
@@ -45,6 +51,7 @@ Status DataExchangeService<TData, TCommand, DataSer, CmdSer>::read_data(
     size_t out_len = 0;
 
     Status s = m_transport->recv(hdr, buf, sizeof(buf), out_len, timeout);
+
     if (s != Status::Ok) return s;
 
     if (hdr.kind != MsgKind::DataPush) return Status::Error;
@@ -67,7 +74,7 @@ template<typename TData, typename TCommand, typename DataSer, typename CmdSer>
 Status DataExchangeService<TData, TCommand, DataSer, CmdSer>::send_cmd(const TCommand& c) {
     if (!m_running.load()) return Status::Disconnected;
 
-    std::lock_guard<std::mutex> lock(m_mtx);
+    std::lock_guard<std::mutex> lock(m_outbox_mtx);
     m_outbox.push_back(c);
     return Status::Ok;
 }
@@ -99,7 +106,7 @@ Status DataExchangeService<TData, TCommand, DataSer, CmdSer>::async_flush() {
     size_t count_to_send = std::min(m_outbox.size(), max_count);
 
     {
-        std::lock_guard<std::mutex> lock(m_mtx);
+        std::lock_guard<std::mutex> lock(m_outbox_mtx);
         if (m_outbox.empty()) return Status::Ok;
         batch.assign(m_outbox.begin(), m_outbox.begin() + count_to_send);
     }
@@ -107,7 +114,7 @@ Status DataExchangeService<TData, TCommand, DataSer, CmdSer>::async_flush() {
     Status res = try_send_batch(batch);
     
     if (res == Status::Ok) {
-        std::lock_guard<std::mutex> lock(m_mtx);
+        std::lock_guard<std::mutex> lock(m_outbox_mtx);
         m_outbox.erase(m_outbox.begin(), std::next(m_outbox.begin(), count_to_send));
     } 
 
@@ -127,7 +134,7 @@ Status DataExchangeService<TData, TCommand, DataSer, CmdSer>::sync_flush(std::ch
         std::vector<TCommand> batch;
         batch.reserve(max_count);
         {
-            std::lock_guard<std::mutex> lock(m_mtx);
+            std::lock_guard<std::mutex> lock(m_outbox_mtx);
             if (m_outbox.empty()) return Status::Ok;
 
             batch.assign(m_outbox.begin(), m_outbox.begin() + count_to_send);

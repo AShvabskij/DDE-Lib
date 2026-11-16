@@ -1,10 +1,9 @@
 #pragma once
 #include "dde/itransport.hpp"
 #include <queue>
-#include <mutex>
 #include <condition_variable>
+#include <atomic>
 #include <memory>
-#include <vector>
 #include <cstring>
 
 namespace dde {
@@ -25,7 +24,7 @@ public:
     std::condition_variable up_down_cv;
     std::condition_variable down_up_cv;
 
-    bool closed = false;
+    std::atomic<bool> closed {false};
 };
 
 class InProcessTransport : public ITransport {
@@ -34,7 +33,7 @@ public:
     explicit InProcessTransport(std::shared_ptr<InProcessChannel> channel, Level lvl);
 
     Status open(const std::string& ) override { return Status::Ok; } // Заглушка
-    void close() override;
+    void   close() override;
 
     Status send(const MsgHeader& hdr, const void* payload, size_t payload_len) override;
     Status recv(MsgHeader& hdr, void* buf, size_t cap, size_t& out_len,
