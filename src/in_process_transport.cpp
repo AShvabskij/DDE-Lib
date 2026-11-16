@@ -32,12 +32,12 @@ Status InProcessTransport::send(const MsgHeader& hdr, const void* payload, size_
 
     {
         std::lock_guard<std::mutex> lock(m_channel->mtx);
-        
-        tx_queue.push(std::move(msg));
-        if (tx_queue.size() > Max_Msg_Count) {
+        if (tx_queue.size() >= Max_Msg_Count) {
             cv.notify_one();
             return Status::Overflow;
         }
+        
+        tx_queue.push(std::move(msg));
     }
     
     cv.notify_one();

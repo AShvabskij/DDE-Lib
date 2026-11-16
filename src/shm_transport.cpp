@@ -222,14 +222,14 @@ Status ShmTransport::recv(MsgHeader& hdr, void* buf, size_t cap, size_t& out_len
 
     std::shared_lock<std::shared_mutex> lock(m_stop_mtx); 
 
+    auto start = std::chrono::steady_clock::now();
+
     if (lock_robust(&m_rx_ring->mtx) != 0) return Status::Error;
 
     if (m_rx_ring->closed) {
         pthread_mutex_unlock(&m_rx_ring->mtx);
         return Status::Disconnected;
     }
-
-    auto start = std::chrono::steady_clock::now();
 
     while (true) {
         if (m_rx_ring->closed) {
@@ -262,11 +262,12 @@ Status ShmTransport::recv(MsgHeader& hdr, void* buf, size_t cap, size_t& out_len
             pthread_mutex_unlock(&m_rx_ring->mtx);
             return Status::Timeout;
         }
+        auto remaining = timeout - std::chrono::duration_cast<std::chrono::milliseconds>(now - start);
 
         struct timespec ts;
         clock_gettime(CLOCK_MONOTONIC, &ts);           // текущий момент + сколько ждать
-        ts.tv_sec  += timeout.count() / 1000;          
-        ts.tv_nsec += (timeout.count() % 1000) * 1'000'000;
+        ts.tv_sec  += remaining.count() / 1000;          
+        ts.tv_nsec += (remaining.count() % 1000) * 1'000'000;
         if (ts.tv_nsec >= 1'000'000'000) {             // нормализация
             ts.tv_sec  += 1;
             ts.tv_nsec -= 1'000'000'000;
