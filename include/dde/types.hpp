@@ -10,8 +10,9 @@ enum class Status {
     Busy,               // буфер получателя заполнен, попробуйте позже
     Timeout,            // операция не завершилась за отведённое время
     Disconnected,       // соединение разорвано
-    Error,               // ошибка или некорректные данные
-    Overflow
+    Overflow,
+    Partial,            // Данные прочитаны, но поместились не все (есть остаток в inbox)
+    Error,              // ошибка или некорректные данные
 };
 
 enum class MsgKind : uint16_t {
@@ -36,9 +37,11 @@ static_assert(sizeof(MsgHeader) == 8, "MsgHeader must be 8 bytes for ABI stabili
 #pragma pack(pop)
 
 // Константы по умолчанию
-constexpr size_t Max_Msg_Payload = 4096;   // максимальный размер payload
+constexpr size_t Max_Msg_Payload = 4096;  // максимальный размер payload
 constexpr size_t Ring_Capacity = 64;      // число слотов в ring buffer'е
-constexpr size_t Max_Msg_Count = 1000;   // максимальный размер очереди сообщений
+constexpr size_t Max_Msg_Count = 1000;    // максимальный размер очереди сообщений
+constexpr size_t Max_Pending_Cmds = 1024; // максимальный размер вх. кеша команд
+constexpr size_t Max_Pending_Data = 1024; // максимальный размер вх. кеша данных
 
 }
 

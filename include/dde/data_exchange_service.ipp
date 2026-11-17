@@ -46,6 +46,20 @@ Status DataExchangeService<TData, TCommand, DataSer, CmdSer>::read_data(
 {
     if (!m_running.load()) return Status::Disconnected;
 
+    {
+        std::lock_guard<std::mutex> lock(m_pebding_data_mtx);
+        if (!m_pending_data.empty()) {
+            out_count = std::min(m_pending_data.size(), max_count);
+            std::copy(m_pending_data.begin(), m_pending_data.begin() + out_count, out_arr);
+            m_pending_data.erase(m_pending_data.begin(), m_pending_data.begin() + out_count);
+
+            if (!m_pending_data.empty()) {
+                return Status::Partial;
+            }
+            return Status::Ok;
+        }
+    }
+
     MsgHeader hdr;
     uint8_t buf[Max_Msg_Payload];
     size_t out_len = 0;
@@ -56,11 +70,26 @@ Status DataExchangeService<TData, TCommand, DataSer, CmdSer>::read_data(
 
     if (hdr.kind != MsgKind::DataPush) return Status::Error;
 
-    if (!DataSer::unpack(buf, out_len, out_arr, max_count, out_count)) {
+    std::vector<TData> full_batch(hdr.count);
+    size_t actual_count = 0;
+
+    if (!DataSer::unpack(buf, out_len, full_batch.data(), full_batch.size(), actual_count)) {
         return Status::Error;
     }
     
-    if (out_count != hdr.count) return Status::Error; // Data Integrity check!
+    if (actual_count != hdr.count) return Status::Error; // Data Integrity check!
+
+    out_count = std::min(actual_count, max_count);
+    std::copy(full_batch.begin(), full_batch.begin() + out_count, out_arr);
+
+    if (actual_count > out_count) { // не всё влезло
+        std::lock_guard<std::mutex> lock(m_pebding_data_mtx);
+        if (m_pending_data.size() +  (actual_count - out_count) > Max_Pending_Data) {
+            return Status::Overflow;
+        }
+        m_pending_data.insert(m_pending_data.end(), full_batch.begin() + out_count, full_batch.begin() + actual_count);
+        return Status::Partial;
+    }
 
     return Status::Ok;
 }
@@ -74,14 +103,28 @@ template<typename TData, typename TCommand, typename DataSer, typename CmdSer>
 Status DataExchangeService<TData, TCommand, DataSer, CmdSer>::send_cmd(const TCommand& c) {
     if (!m_running.load()) return Status::Disconnected;
 
-    std::lock_guard<std::mutex> lock(m_outbox_mtx);
-    m_outbox.push_back(c);
+    std::lock_guard<std::mutex> lock(m_outbox_cmd_mtx);
+    m_outbox_cmd.push_back(c);
     return Status::Ok;
 }
 
 template<typename TData, typename TCommand, typename DataSer, typename CmdSer>
 Status DataExchangeService<TData, TCommand, DataSer, CmdSer>::recv_cmd(TCommand* out_arr, size_t max_count, size_t& out_count, std::chrono::milliseconds timeout) {
     if (!m_running.load()) return Status::Disconnected;
+
+    {
+        std::lock_guard<std::mutex> lock(m_pending_cmds_mtx);
+        if (!m_pending_cmds.empty()) {
+            out_count = std::min(m_pending_cmds.size(), max_count);
+            std::copy(m_pending_cmds.begin(), m_pending_cmds.begin() + out_count, out_arr);
+            m_pending_cmds.erase(m_pending_cmds.begin(), m_pending_cmds.begin() + out_count);
+
+            if (!m_pending_cmds.empty()) {
+                return Status::Partial;
+            }
+            return Status::Ok;
+        }
+    }
 
     MsgHeader hdr;
     uint8_t buf[Max_Msg_Payload];
@@ -92,7 +135,26 @@ Status DataExchangeService<TData, TCommand, DataSer, CmdSer>::recv_cmd(TCommand*
 
     if (hdr.kind != MsgKind::CommandBatch) return Status::Error;
 
-    if (!CmdSer::unpack(buf, out_len, out_arr, max_count, out_count)) return Status::Error;
+    std::vector<TCommand> full_batch(hdr.count);
+    size_t actual_count = 0;
+
+    if (!CmdSer::unpack(buf, out_len, full_batch.data(), full_batch.size(), actual_count)) {
+        return Status::Error;
+    }
+
+    out_count = std::min(actual_count, max_count);
+    std::copy(full_batch.begin(), full_batch.begin() + out_count, out_arr);
+
+    if (actual_count > out_count) { // не всё влезло
+        std::lock_guard<std::mutex> lock(m_pending_cmds_mtx);
+
+        if (m_pending_cmds.size() +  (actual_count - out_count) > Max_Pending_Cmds) {
+            return Status::Overflow;
+        }
+
+        m_pending_cmds.insert(m_pending_cmds.end(), full_batch.begin() + out_count, full_batch.begin() + actual_count);
+        return Status::Partial;
+    }
 
     return Status::Ok;
 }
@@ -103,19 +165,21 @@ Status DataExchangeService<TData, TCommand, DataSer, CmdSer>::async_flush() {
 
     std::vector<TCommand> batch;
     size_t max_count = CmdSer::max_count(Max_Msg_Payload);
-    size_t count_to_send = std::min(m_outbox.size(), max_count);
+    size_t count_to_send = 0;
 
     {
-        std::lock_guard<std::mutex> lock(m_outbox_mtx);
-        if (m_outbox.empty()) return Status::Ok;
-        batch.assign(m_outbox.begin(), m_outbox.begin() + count_to_send);
+        std::lock_guard<std::mutex> lock(m_outbox_cmd_mtx);
+        if (m_outbox_cmd.empty()) return Status::Ok;
+
+        count_to_send = std::min(m_outbox_cmd.size(), max_count);
+        batch.assign(m_outbox_cmd.begin(), m_outbox_cmd.begin() + count_to_send);
     }
 
     Status res = try_send_batch(batch);
     
     if (res == Status::Ok) {
-        std::lock_guard<std::mutex> lock(m_outbox_mtx);
-        m_outbox.erase(m_outbox.begin(), std::next(m_outbox.begin(), count_to_send));
+        std::lock_guard<std::mutex> lock(m_outbox_cmd_mtx);
+        m_outbox_cmd.erase(m_outbox_cmd.begin(), std::next(m_outbox_cmd.begin(), count_to_send));
     } 
 
     return res;
@@ -128,22 +192,24 @@ Status DataExchangeService<TData, TCommand, DataSer, CmdSer>::sync_flush(std::ch
     auto start = std::chrono::steady_clock::now();
 
     size_t max_count = CmdSer::max_count(Max_Msg_Payload);;
-    size_t count_to_send = std::min(m_outbox.size(), max_count);
-    
-    while (true) {
-        std::vector<TCommand> batch;
-        batch.reserve(max_count);
-        {
-            std::lock_guard<std::mutex> lock(m_outbox_mtx);
-            if (m_outbox.empty()) return Status::Ok;
+    size_t count_to_send = 0;
 
-            batch.assign(m_outbox.begin(), m_outbox.begin() + count_to_send);
+    while (true) {
+
+        std::vector<TCommand> batch;
+        {
+            std::lock_guard<std::mutex> lock(m_outbox_cmd_mtx);
+            if (m_outbox_cmd.empty()) return Status::Ok;
+
+            count_to_send = std::min(m_outbox_cmd.size(), max_count);
+            batch.assign(m_outbox_cmd.begin(), m_outbox_cmd.begin() + count_to_send);
         }
 
         Status res = try_send_batch(batch);
 
         if (res == Status::Ok) {
-                m_outbox.erase(m_outbox.begin(), std::next(m_outbox.begin(), count_to_send)); // убираем отправленные команды из очереди
+                std::lock_guard<std::mutex> lock(m_outbox_cmd_mtx);
+                m_outbox_cmd.erase(m_outbox_cmd.begin(), std::next(m_outbox_cmd.begin(), count_to_send)); // убираем отправленные команды из очереди
                 continue; // возможно в очереди есть еще, пробуем сразу
         } else if (res == Status::Busy) {
             auto now = std::chrono::steady_clock::now();

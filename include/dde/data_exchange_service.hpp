@@ -38,10 +38,14 @@ private:
 
     std::atomic<bool> m_running{false};
     
-    // Очередь команд
-    std::mutex m_outbox_mtx;
-    std::deque<TCommand> m_outbox;
-    
+    std::mutex m_outbox_cmd_mtx;
+    std::deque<TCommand> m_outbox_cmd; // Очередь команд на отправку
+
+    std::mutex m_pending_cmds_mtx;
+    std::vector<TCommand> m_pending_cmds; 
+
+    std::mutex m_pebding_data_mtx;
+    std::vector<TData> m_pending_data; 
 };
 
 } // namespace dde
